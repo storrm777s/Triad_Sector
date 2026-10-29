@@ -1,297 +1,1351 @@
-using Content.Server.Construction;
-using Content.Server.Administration.Logs;
-using Content.Server.Fluids.EntitySystems;
-using Content.Server.Ghost;
-using Content.Server.Popups;
-using Content.Shared.Repairable;
-using Content.Server.Stack;
-using Content.Server.Wires;
-using Content.Shared.Body.Systems;
-using Content.Shared.Chemistry.Components;
-using Content.Shared.Chemistry.Components.SolutionManager;
-using Content.Shared.Chemistry.EntitySystems;
-using Content.Shared.Database;
-using Content.Shared.Destructible;
-using Content.Shared.Emag.Components;
-using Content.Shared.Gibbing;
-using Content.Shared.Humanoid;
-using Content.Shared.IdentityManagement;
-using Content.Shared.Interaction.Events;
-using Content.Shared.Materials;
-using Content.Shared.Mind;
-using Content.Shared.Power;
-using Content.Shared.Stacks;
-using Robust.Server.GameObjects;
-using Robust.Shared.Player;
-using Robust.Shared.Prototypes;
-using Robust.Shared.Utility;
-using System.Linq;
+# BASE
+## AI packages
+- type: entity
+  id: MobRogueSiliconAISimpleMelee
+  abstract: true
+  components:
+  - type: HTN
+    rootTask:
+       task: SimpleHostileCompound
+    blackboard:
+      NavClimb: !type:Bool
+        false
+      NavInteract: !type:Bool
+        true
+      NavPry: !type:Bool
+        true
+      NavSmash: !type:Bool
+        true
+      SoundTargetInLOS: !type:SoundPathSpecifier
+        path: /Audio/Effects/double_beep.ogg
 
-namespace Content.Server.Materials;
+- type: entity
+  id: MobRogueSiliconAISimpleRanged
+  abstract: true
+  components:
+  - type: HTN
+    rootTask:
+       task: SimpleRangedHostileCompound
+    blackboard:
+      NavClimb: !type:Bool
+        false
+      NavInteract: !type:Bool
+        true
+      NavPry: !type:Bool
+        true
+      NavSmash: !type:Bool
+        true
+      SoundTargetInLOS: !type:SoundPathSpecifier
+        path: /Audio/Effects/double_beep.ogg
 
-/// <inheritdoc/>
-public sealed partial class MaterialReclaimerSystem : SharedMaterialReclaimerSystem
-{
-    [Dependency] private IPrototypeManager _prototype = default!;
-    [Dependency] private AppearanceSystem _appearance = default!;
-    [Dependency] private GhostSystem _ghostSystem = default!;
-    [Dependency] private MaterialStorageSystem _materialStorage = default!;
-    [Dependency] private PopupSystem _popup = default!;
-    [Dependency] private SharedSolutionContainerSystem _solutionContainer = default!;
-    [Dependency] private SharedBodySystem _body = default!; //bobby
-    [Dependency] private PuddleSystem _puddle = default!;
-    [Dependency] private StackSystem _stack = default!;
-    [Dependency] private SharedMindSystem _mind = default!;
-    [Dependency] private IAdminLogManager _adminLogger = default!;
+## Mob base
+- type: entity
+  name: hivemind unit
+  abstract: true
+  parent:
+  - BaseC3MobConstruct
+  - MobNonHumanHostileBase
+  - MobHumanoidInvetorySimplified
+  - MobRogueSiliconAISimpleRanged
+  #- MobLaserReflect # Added to prevent laser abuse from players
+  - NFMobRestrictionsSilicon
+  id: MobRogueSiliconBase
+  components:
+  - type: Damageable
+    damageContainer: Silicon
+    damageModifierSet: MobRogueSiliconDamageModifierSet
+  - type: NpcFactionMember
+    factions:
+    - SiliconsExpeditionNF
+  - type: NameIdentifier
+    group: Silicon
+  - type: Bloodstream
+    bloodReagent: WeldingFuel
+    bloodMaxVolume: 60
+  - type: MobState
+    allowedStates:
+    - Alive
+    - Critical
+    - Dead
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      80: Dead #Mono, health adjustments
+    stateAlertDict:
+      Alive: BorgHealth
+      Critical: BorgCrit
+      Dead: BorgDead
+    showOverlays: false
+    allowRevives: true
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      48: 0.7
+      64: 0.5
+  - type: HealthExaminable
+    examinableTypes:
+      - Blunt
+      - Slash
+      - Piercing
+      - Heat
+      - Shock
+    locPrefix: silicon
+  - type: Stamina
+    critThreshold: 100
+  - type: Repairable
+    doAfterDelay: 10
+    allowSelfRepair: true
+  - type: BatterySelfRecharger
+    autoRecharge: true
+    autoRechargeRate: 100
+  - type: Battery
+    maxCharge: 300
+    startingCharge: 300
+  - type: RechargeBasicEntityAmmo
+    rechargeCooldown: 1.5
+    rechargeSound:
+      path: /Audio/_NF/Effects/silence.ogg
+  - type: MeleeWeapon
+    attackRate: 1.0
+    altDisarm: false
+    angle: 0
+    animation: WeaponArcPunch
+    damage:
+      types:
+        Heat: 4
+        Blunt: 6
+        Structural: 20
+    soundHit:
+      collection: MetalThud
+  - type: Speech
+    speechSounds: SyndieBorg
+  - type: Vocal
+    sounds:
+      Unsexed: UnisexSiliconSyndicate
+  #- type: Advertise
+    #pack: mercenaryhumanoidchatter
+    #minimumWait: 30
+    #maximumWait: 120
+    #nextAdvertisementTime: 10
+  - type: AutoWakeUp
+  - type: FootstepModifier
+    footstepSoundCollection:
+      collection: FootstepBorg
+  - type: MovementSpeedModifier
+    baseWalkSpeed : 4.5
+    baseSprintSpeed : 4.5
 
-    /// <inheritdoc/>
-    public override void Initialize()
-    {
-        base.Initialize();
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  id: MobRogueSiliconScrapBase
+  name: scrap unit
+  description: These bots come in various shapes and forms, reflecting a wide range of designs and purposes. Many seem to be put together using locally available materials, leading to their disparate appearances. Notably, some units are equipped with thrusters and embedded laser weapons.
+  abstract: true
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT1
+  - type: Sprite
+    drawdepth: Mobs
+    sprite: _NF/Mobs/RogueSilicons/robots.rsi
+    layers:
+    - state: body_generic
+      map: [ "body" ]
+    - state: head_generic
+      map: [ "head" ]
+    - state: head_generic_eye
+      map: [ "eyes" ]
+      color: "#990000"
+      shader: unshaded
+    - state: l_arm_generic
+      map: [ "leftArm" ]
+    - state: r_arm_generic
+      map: [ "rightArm" ]
+    - state: l_leg_generic
+      map: [ "leftLeg" ]
+    - state: r_leg_generic
+      map: [ "rightLeg" ]
+    - state: mask_null
+      map: [ "decor" ]
+    - state: mask_null
+      map: [ "overlay" ]
+    - state: mask_null
+      map: [ "overlayUnshaded" ]
+      shader: unshaded
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      85: Dead #Mono, health adjustments
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      36: 0.7
+      48: 0.5
+  - type: Stamina
+    critThreshold: 600
 
-        SubscribeLocalEvent<MaterialReclaimerComponent, RefreshPartsEvent>(OnRefreshParts); // Frontier: machine components
-        SubscribeLocalEvent<MaterialReclaimerComponent, UpgradeExamineEvent>(OnUpgradeExamine); // Frontier: machine components
-        SubscribeLocalEvent<MaterialReclaimerComponent, PowerChangedEvent>(OnPowerChanged);
-        SubscribeLocalEvent<MaterialReclaimerComponent, SuicideByEnvironmentEvent>(OnSuicideByEnvironment);
-        SubscribeLocalEvent<ActiveMaterialReclaimerComponent, PowerChangedEvent>(OnActivePowerChanged);
+- type: entity
+  id: MobRogueSiliconProjectileBatteryAmmo
+  abstract: true
+  components:
+  - type: ProjectileBatteryAmmoProvider
+    proto: BulletEnergyGunLaser
+    fireCost: 100
 
-        SubscribeLocalEvent<MaterialReclaimerComponent, BreakageEventArgs>(OnBreakage);
-        SubscribeLocalEvent<MaterialReclaimerComponent, RepairedEvent>(OnRepaired);
-    }
+- type: entity
+  id: MobRogueSiliconHitscanBatteryAmmo
+  abstract: true
+  components:
+  - type: HitscanBatteryAmmoProvider
+    proto: RedMediumLaser
+    fireCost: 100
 
-    private void OnUpgradeExamine(Entity<MaterialReclaimerComponent> entity, ref UpgradeExamineEvent args)
-    {
-        args.AddPercentageUpgrade(Loc.GetString("material-reclaimer-upgrade-process-rate"), entity.Comp.MaterialProcessRate / entity.Comp.BaseMaterialProcessRate);
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  id: MobRogueSiliconDroneBase
+  name: drone
+  description: Hacked and reprogrammed by a rogue AI departmental drones.
+  abstract: true
+  components:
+  - type: CanMoveInAir
+  - type: Fixtures
+    fixtures:
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.30 # Lowered the value, to allow them to fit through the airlocks
+        density: 100
+        mask:
+          - FlyingMobMask
+        layer:
+          - FlyingMobLayer
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
+  - type: Bloodstream
+    bloodReagent: WeldingFuel
+    bloodMaxVolume: 6
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      54: Dead #Mono, health adjustments
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      18: 0.7
+      24: 0.5
+  - type: Stamina
+    critThreshold: 600
+  - type: Gun
+    showExamineText: false
+    fireRate: 0.75
+    minAngle: 0
+    maxAngle: 15
+    soundGunshot:
+      path: /Audio/_DV/Weapons/Guns/Gunshots/laser.ogg
+  - type: FootstepModifier
+    footstepSoundCollection:
+      path: /Audio/_NF/Effects/silence.ogg
+  - type: SoundWhileAlive
+  - type: AmbientSound
+    volume: -9
+    range: 5
+    sound: /Audio/Effects/shuttle_thruster.ogg
 
-    private void OnRefreshParts(Entity<MaterialReclaimerComponent> entity, ref RefreshPartsEvent args)
-    {
-        var rating = args.PartRatings[entity.Comp.MachinePartProcessRate] - 1;
-        entity.Comp.MaterialProcessRate = entity.Comp.BaseMaterialProcessRate * MathF.Pow(entity.Comp.PartRatingProcessRateMultiplier, rating);
-        Dirty(entity);
-    }
+- type: entity
+  id: RogueSiliconT1LootLoadout
+  abstract: true
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT1
 
-    private void OnPowerChanged(Entity<MaterialReclaimerComponent> entity, ref PowerChangedEvent args)
-    {
-        AmbientSound.SetAmbience(entity.Owner, entity.Comp.Enabled && args.Powered);
-        entity.Comp.Powered = args.Powered;
-        Dirty(entity);
-    }
+# VARIATIONS
+## Tier 1
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrap
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+          body_servo: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+          head_servo: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+          head_servo_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+          l_arm_servo: ""
+          mask_null: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          r_arm_servo: ""
+          mask_null: ""
+        leftLeg:
+          l_leg_generic: ""
+          l_leg_light: ""
+          l_leg_thruster: ""
+          l_leg_treads: ""
+          l_leg_servo: ""
+        rightLeg:
+          r_leg_generic: ""
+          r_leg_light: ""
+          r_leg_thruster: ""
+          r_leg_treads: ""
+          r_leg_servo: ""
+        decor:
+          mask_null: ""
+        overlay:
+          overlay_openbrain: ""
+          overlay_openmodule: ""
+          overlay_openwires: ""
+          mask_null: ""
+        overlayUnshaded:
+          overlay_critdmg: ""
+          mask_null: ""
 
-    private void OnSuicideByEnvironment(Entity<MaterialReclaimerComponent> entity, ref SuicideByEnvironmentEvent args)
-    {
-        if (args.Handled)
-            return;
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrapThreads
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+          mask_null: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          mask_null: ""
+        leftLeg:
+          mask_null: ""
+        rightLeg:
+          mask_null: ""
+        decor:
+          leg_treads: ""
+        overlay:
+          overlay_openbrain: ""
+          overlay_openmodule: ""
+          overlay_openwires: ""
+          mask_null: ""
+        overlayUnshaded:
+          overlay_critdmg: ""
+          mask_null: ""
 
-        var victim = args.Victim;
-        if (TryComp(victim, out ActorComponent? actor) &&
-            _mind.TryGetMind(actor.PlayerSession, out var mindId, out var mind))
-        {
-            _ghostSystem.OnGhostAttempt(mindId, false, mind: mind);
-            if (mind.OwnedEntity is { Valid: true } suicider)
-            {
-                _popup.PopupEntity(Loc.GetString("recycler-component-suicide-message"), suicider);
-            }
-        }
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrapThrusters
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+          mask_null: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          mask_null: ""
+        leftLeg:
+          mask_null: ""
+        rightLeg:
+          mask_null: ""
+        decor:
+          leg_thruster: ""
+        overlay:
+          overlay_openbrain: ""
+          overlay_openmodule: ""
+          overlay_openwires: ""
+          mask_null: ""
+        overlayUnshaded:
+          overlay_critdmg: ""
+          mask_null: ""
+  - type: PointLight
+    radius: 2.5
+    color: orange
+    energy: 0.5
+  - type: CanMoveInAir
+  - type: Fixtures
+    fixtures:
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.30 # Lowered the value, to allow them to fit through the airlocks
+        density: 100
+        mask:
+          - FlyingMobMask
+        layer:
+          - FlyingMobLayer
+  - type: FootstepModifier
+    footstepSoundCollection:
+      path: /Audio/_NF/Effects/silence.ogg
+  - type: SoundWhileAlive
+  - type: AmbientSound
+    volume: -9
+    range: 5
+    sound: /Audio/Effects/shuttle_thruster.ogg
 
-        _popup.PopupEntity(Loc.GetString("recycler-component-suicide-message-others",
-                ("victim", Identity.Entity(victim, EntityManager))),
-            victim,
-            Filter.PvsExcept(victim, entityManager: EntityManager),
-            true);
+- type: entity
+  parent:
+  - MobRogueSiliconScrapThrusters
+  id: MobRogueSiliconScrapThrustersRanged
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: HitscanBatteryAmmoProvider
+    proto: RedLaser
+    fireCost: 100
+  - type: Gun
+    showExamineText: false
+    fireRate: 0.7
+    minAngle: 5
+    maxAngle: 10
+    selectedMode: FullAuto
+    availableModes:
+    - FullAuto
+    soundGunshot:
+      path: /Audio/Weapons/Guns/Gunshots/laser.ogg
+      params:
+        variation: 0.2
 
-        _body.GibBody(victim, true);
-        _appearance.SetData(entity.Owner, RecyclerVisuals.Bloody, true);
-        args.Handled = true;
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrapFlayer
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: MeleeWeapon
+    attackRate: 1.0
+    altDisarm: false
+    angle: 0
+    animation: WeaponArcClaw
+    damage:
+      types:
+        Slash: 15
+        Structural: 20
+    soundHit:
+      path: /Audio/Weapons/bladeslice.ogg
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          mask_null: ""
+        leftLeg:
+          l_leg_generic: ""
+          l_leg_light: ""
+        rightLeg:
+          r_leg_generic: ""
+          r_leg_light: ""
+        decor:
+          decor_body_gibs: ""
+          decor_head_gibs: ""
+          decor_head_body_gibs: ""
+        overlay:
+          overlay_l_arm_claws: ""
+          overlay_lr_arm_claws: ""
+          overlay_r_arm_claws: ""
 
-    private void OnActivePowerChanged(Entity<ActiveMaterialReclaimerComponent> entity, ref PowerChangedEvent args)
-    {
-        if (!args.Powered)
-            TryFinishProcessItem(entity, null, entity.Comp);
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconDroneBase
+  - MobRogueSiliconProjectileBatteryAmmo
+  - RogueSiliconT1LootLoadout
+  id: MobRogueSiliconDroneLethals
+  description: Hacked by a rogue AI, these security drones are programmed to kill.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: base
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: decor_department
+      color: "#990000"
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: decor_department_accent
+      color: "#000000"
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: base_eyes
+      shader: unshaded
+      color: "#990000"
 
-    private void OnBreakage(Entity<MaterialReclaimerComponent> ent, ref BreakageEventArgs args)
-    {
-        //un-emags itself when it breaks
-        RemComp<EmaggedComponent>(ent);
-        SetBroken(ent, true);
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconDroneBase
+  - MobRogueSiliconProjectileBatteryAmmo
+  - RogueSiliconT1LootLoadout
+  id: MobRogueSiliconDroneNonLethals
+  description: These engineering drones are capable of shooting disabler bolts. Dangerous in combination with other enemies.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: base
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: decor_department
+      color: "#c86400"
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: decor_department_accent
+      color: "#ffff00"
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: base_eyes
+      shader: unshaded
+      color: "#0055cc"
+  - type: ProjectileBatteryAmmoProvider
+    proto: BulletDisabler
+    fireCost: 100
 
-    private void OnRepaired(Entity<MaterialReclaimerComponent> ent, ref RepairedEvent args)
-    {
-        SetBroken(ent, false);
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconDroneBase
+  - MobRogueSiliconProjectileBatteryAmmo
+  - RogueSiliconT1LootLoadout
+  id: MobRogueSiliconDroneScience
+  description: A science drone, this rogue drone comes equipped with an experimental C.H.I.M.P. cannon.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: base
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: decor_department
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: decor_department_accent
+      color: "#6400c8"
+    - sprite: _NF/Mobs/RogueSilicons/drones.rsi
+      state: base_eyes
+      shader: unshaded
+      color: "#ffff00"
+  - type: ProjectileBatteryAmmoProvider
+    proto: AnomalousParticleSigmaStrong
+    fireCost: 100
 
-    public void SetBroken(Entity<MaterialReclaimerComponent> ent, bool val)
-    {
-        if (ent.Comp.Broken == val)
-            return;
+- type: entity
+  parent:
+  - MobRogueSiliconDroneBase
+  id: MobRogueSiliconViscerator
+  name: viscerator unit
+  description: Small, quick, and nimble, these drones are designed to chase its targets through narrow areas and incapacitate those it catches. Often accompanies catcher units.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Sprite
+    drawdepth: Mobs
+    sprite: _NF/Mobs/RogueSilicons/viscerator.rsi
+    layers:
+    - map: [ "enum.DamageStateVisualLayers.Base" ]
+      state: base
+    - map: [ "enum.DamageStateVisualLayers.BaseUnshaded" ]
+      state: base_lights
+      shader: unshaded
+  - type: MobState
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      25: Dead #Mono, health adjustments
+  - type: DamageStateVisuals
+    states:
+      Alive:
+        Base: base
+        BaseUnshaded: base_lights
+      Critical:
+        Base: crit
+        BaseUnshaded: crit_lights
+      Dead:
+        Base: destroyed
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      7: 0.7
+      10: 0.5
+  - type: MovementSpeedModifier
+    baseSprintSpeed : 5
+    baseWalkSpeed: 5
+  - type: MeleeWeapon
+    attackRate: 1.0
+    animation: WeaponArcClaw
+    damage:
+      types:
+        Slash: 4
+        Structural: 10
+    soundHit:
+      path: /Audio/Weapons/bladeslice.ogg
+      params:
+        variation: 0.250
 
-        _appearance.SetData(ent, RecyclerVisuals.Broken, val);
-        SetReclaimerEnabled(ent, false);
+## Tier 2
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconServo
+  name: servo unit
+  description: With its programming rewritten, this crash test dummy will stop at nothing in exacting its revenge.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT2
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: body_servo
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_servo
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_servo_eye
+      color: "#990000"
+      shader: unshaded
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_arm_servo
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_arm_servo
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_leg_servo
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_leg_servo
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
 
-        ent.Comp.Broken = val;
-        Dirty(ent);
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconHerder
+  name: herder unit
+  description: This rogue silicon unit's primary directive is to corral and herd captives. Its stun prod can be used to good effect, take caution.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT2
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: body_generic
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_sturdy
+      color: "#0055cc"
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_sturdy_eye
+      color: "#0055cc"
+      shader: unshaded
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: overlay_meson
+      shader: unshaded
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_arm_sturdy
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_arm_sturdy
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_leg_generic
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_leg_generic
+    - sprite: Objects/Weapons/Melee/stunprod.rsi
+      state: on-inhand-right
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
+  - type: StaminaDamageOnHit
+    damage: 10
+    sound: /Audio/Weapons/egloves.ogg
+  - type: MeleeWeapon
+    attackRate: 1.0
+    altDisarm: false
+    angle: 0
+    animation: WeaponArcPunch
+    damage:
+      types:
+        Blunt: 6
+        Shock: 7
+        Structural: 20
+    soundHit:
+      path: /Audio/Weapons/bladeslice.ogg
 
-    /// <inheritdoc/>
-    public override bool TryFinishProcessItem(EntityUid uid, MaterialReclaimerComponent? component = null, ActiveMaterialReclaimerComponent? active = null)
-    {
-        if (!Resolve(uid, ref component, ref active, false))
-            return false;
+- type: entity
+  parent:
+  - MobRogueSiliconDroneBase
+  - MobPassiveRegen
+  - MobRogueSiliconHitscanBatteryAmmo
+  id: MobRogueSiliconHunter
+  name: hunter unit
+  description: These mobile drones are tasked with reconnaissance, threat identification, and target elimination.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT2
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: body_light
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_light
+      color: "#990000"
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_light_eye
+      color: "#990000"
+      shader: unshaded
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: overlay_thermal
+      shader: unshaded
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_arm_light
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_arm_light
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: leg_thruster
+    - sprite: Clothing/Neck/mantles/hosmantle.rsi
+      state: equipped-NECK
+    - sprite: Objects/Weapons/Guns/Battery/laser_gun.rsi
+      state: wielded-inhand-right
+  - type: PointLight
+    radius: 3.5
+    color: orange
+    energy: 0.5
+  - type: Gun
+    showExamineText: false
+    fireRate: 0.8
+    minAngle: 0
+    maxAngle: 5
+    selectedMode: FullAuto
+    availableModes:
+    - FullAuto
+    soundGunshot:
+      path: /Audio/Weapons/Guns/Gunshots/laser.ogg
+      params:
+        variation: 0.2
 
-        if (!base.TryFinishProcessItem(uid, component, active))
-            return false;
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  - MobPassiveRegen
+  id: MobRogueSiliconCatcher
+  name: catcher unit
+  description: Equipped with bolas, this unit is designed to slow, capture, and detain targets.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT2
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: body_generic
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_heavy
+      color: "#d6b328"
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: head_heavy_eye
+      color: "#990000"
+      shader: unshaded
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_arm_heavy
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_arm_heavy
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: l_leg_generic
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: r_leg_generic
+    - sprite: Clothing/Neck/mantles/qmmantle.rsi
+      state: equipped-NECK
+    - sprite: _NF/Mobs/RogueSilicons/robots.rsi
+      state: overlay_r_arm_claws
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
+  - type: BasicEntityAmmoProvider
+    proto: Bola
+    capacity: 1
+    count: 1
+  - type: Gun
+    showExamineText: false
+    fireRate: 0.075
+    selectedMode: FullAuto
+    availableModes:
+    - FullAuto
+    soundGunshot: /Audio/Weapons/Guns/Gunshots/rpgfire.ogg
+  - type: ProjectileBatteryAmmoProvider
+    proto: SpawnMobViscerator
+    fireCost: 100
+  - type: Battery
+    maxCharge: 100
+    startingCharge: 100
+  - type: BatterySelfRecharger
+    autoRecharge: true
+    autoRechargeRate: 5
 
-        if (active.ReclaimingContainer.ContainedEntities.FirstOrNull() is not { } item)
-            return false;
+## Tier 3
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  - MobPassiveRegen
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconTesla
+  name: tesla unit
+  description: Originally designed to service tesla power generators, this silicon's equipment has been repurposed as a makeshift stun gun.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT3
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: _NF/Mobs/RogueSilicons/ancient.rsi
+      state: base
+      color: "#8ca1a3"
+    - sprite: _NF/Mobs/RogueSilicons/ancient.rsi
+      state: decor_02
+      color: "#c96d25"
+    - sprite: _NF/Mobs/RogueSilicons/ancient.rsi
+      state: eyes
+      color: "#990000"
+      shader: unshaded
+    - sprite: Objects/Weapons/Guns/Battery/tesla_gun.rsi
+      state: inhand-right
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      145: Dead #Mono, health adjustments
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      66: 0.7
+      88: 0.5
+  - type: Stamina
+    critThreshold: 600
+  - type: ProjectileBatteryAmmoProvider
+    proto: TeslaGunBulletRogueSilicon # Mono
+    fireCost: 100
+  - type: BatterySelfRecharger
+    autoRecharge: true
+    autoRechargeRate: 50 # Mono 30 -> 50
+  - type: Battery
+    maxCharge: 300
+    startingCharge: 300
+  - type: Gun
+    projectileSpeed: 10
+    showExamineText: false
+    fireRate: 0.55 # Mono 0.75 -> 0.55
+    minAngle: 0
+    maxAngle: 15
+    soundGunshot:
+      path: /Audio/Effects/Lightning/lightningshock.ogg
+      params:
+        variation: 0.2
+  - type: PointLight
+    radius: 1
+    energy: 1.5
+    color: "#47f8ff"
 
-        Container.Remove(item, active.ReclaimingContainer);
-        Dirty(uid, component);
+#Mono Start: version of the tesla projectile for tesla-unit, less cancerous, more dangerous
+- type: entity
+  name: tesla gun lightning
+  id: TeslaGunBulletRogueSilicon
+  parent: BaseBullet
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: TimedDespawn
+    lifetime: 5
+  - type: Sprite
+    sprite: Structures/Power/Generation/Tesla/energy_miniball.rsi
+    layers:
+    - state: tesla_projectile
+      shader: unshaded
+  - type: StaminaDamageOnCollide
+    damage: 35
+  - type: EmbeddableProjectile
+  - type: Projectile
+    deleteOnCollide: false
+    soundHit:
+      path: /Audio/Weapons/Guns/Hits/bullet_hit.ogg
+    damage:
+      types:
+        Piercing: 0
+        Heat: 17
+        Shock: 10
+  - type: Electrified
+    requirePower: false
+  - type: Tag
+    tags:
+      - HideContextMenu
+#Mono end
 
-        // scales the output if the process was interrupted.
-        var completion = 1f - Math.Clamp((float) Math.Round((active.EndTime - Timing.CurTime) / active.Duration),
-            0f,
-            1f);
-        Reclaim(uid, item, completion, component);
+## Tier 4 Boss
+- type: entity
+  parent:
+  - MobRogueSiliconDroneBase
+  - MobPassiveRegen
+  - MobRogueSiliconHitscanBatteryAmmo
+  - NFMobBossRestrictions
+  id: MobRogueSiliconGuardian
+  name: guardian unit
+  description: An advanced security silicon, typically used to safeguard high-security areas such as vaults and server rooms. After being hacked, this unit carries out the AI's will.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT4
+  - type: CanMoveInAir
+  - type: Fixtures
+    fixtures:
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.45
+        density: 100
+        mask:
+          - FlyingMobMask
+        layer:
+          - FlyingMobLayer
+  - type: Sprite
+    drawdepth: Mobs
+    sprite: _NF/Mobs/RogueSilicons/netguardian.rsi
+    layers:
+    - map: [ "enum.DamageStateVisualLayers.Base" ]
+      state: netguardian
+  - type: DamageStateVisuals
+    states:
+      Alive:
+        Base: netguardian
+      Critical:
+        Base: crash
+      Dead:
+        Base: crash
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      350: Dead #Mono, health adjustments
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      120: 0.7
+      160: 0.5
+  - type: Stamina
+    critThreshold: 600
+  - type: HitscanBatteryAmmoProvider
+    proto: RadLaserGuardian # Triad - 2 damage, 16 DPS
+    fireCost: 10
+  - type: Gun
+    showExamineText: false
+    fireRate: 8
+    minAngle: 1
+    maxAngle: 10
+    selectedMode: FullAuto
+    availableModes:
+    - FullAuto
+    soundGunshot:
+      path: /Audio/Weapons/Guns/Gunshots/laser.ogg
+      params:
+        variation: 0.2
+  - type: PointLight
+    radius: 2
+    energy: 2.5
+    color: "#47f8ff"
 
-        return true;
-    }
+- type: entity
+  parent:
+  - MobRogueSiliconBase
+  - MobPassiveRegen
+  id: MobRogueSiliconBoss
+  name: one star unit
+  description: An autonomous combat-grade mech, typically used for offensive operations. Now a rogue AI's elite guard. Equipped with missile launchers, exercise extreme caution.
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT4
+  - type: Sprite
+    drawdepth: Mobs
+    layers:
+    - sprite: Mobs/Silicon/onestar.rsi
+      state: onestar_boss
+    - sprite: Mobs/Silicon/onestar.rsi
+      state: onestar_boss_screen
+      shader: unshaded
+  - type: DamageStateVisuals
+    rotate: true
+  - type: RotationVisuals
+    defaultRotation: 90
+    horizontalRotation: 90
+  - type: MobThresholds
+    thresholds:
+      0: Alive
+      400: Dead #Mono, health adjustments
+  - type: SlowOnDamage
+    speedModifierThresholds:
+      200: 0.7
+      260: 0.5
+  - type: Stamina
+    critThreshold: 600
+  - type: BasicEntityAmmoProvider
+    proto: CartridgeRocketMiniNF
+    capacity: 10
+    count: 10
+  - type: Gun
+    projectileSpeed: 10
+    showExamineText: false
+    fireRate: 1
+    minAngle: 30
+    maxAngle: 45
+    selectedMode: FullAuto
+    availableModes:
+    - FullAuto
+    soundGunshot: /Audio/Weapons/Guns/Gunshots/rpgfire.ogg
+  - type: FootstepModifier
+    footstepSoundCollection:
+      path: /Audio/Mecha/sound_mecha_powerloader_step.ogg
 
-    /// <inheritdoc/>
-    public override void Reclaim(EntityUid uid,
-        EntityUid item,
-        float completion = 1f,
-        MaterialReclaimerComponent? component = null)
-    {
-        if (!Resolve(uid, ref component))
-            return;
 
-        base.Reclaim(uid, item, completion, component);
+### Asteroid scrap bots: no regen
+## Tier 1
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrapAsteroid
+  # Triad: Fixed typo:
+  # name: malfunctionnig scrap unit
+  name: malfunctioning scrap unit
+  # End Triad
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: MovementSpeedModifier
+    baseWalkSpeed : 3.6 # -20% from normal speed
+    baseSprintSpeed : 3.6 # -20% from normal speed
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT0
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+          body_servo: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+          head_servo: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+          head_servo_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+          l_arm_servo: ""
+          mask_null: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          r_arm_servo: ""
+          mask_null: ""
+        leftLeg:
+          l_leg_generic: ""
+          l_leg_light: ""
+          l_leg_thruster: ""
+          l_leg_treads: ""
+          l_leg_servo: ""
+        rightLeg:
+          r_leg_generic: ""
+          r_leg_light: ""
+          r_leg_thruster: ""
+          r_leg_treads: ""
+          r_leg_servo: ""
+        decor:
+          mask_null: ""
+        overlay:
+          overlay_openbrain: ""
+          overlay_openmodule: ""
+          overlay_openwires: ""
+          mask_null: ""
+        overlayUnshaded:
+          overlay_critdmg: ""
 
-        var xform = Transform(uid);
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrapThreadsAsteroid
+  # Triad: Fixed typo:
+  # name: malfunctionnig scrap unit
+  name: malfunctioning scrap unit
+  # End Triad
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: MovementSpeedModifier
+    baseWalkSpeed : 3.6 # -20% from normal speed
+    baseSprintSpeed : 3.6 # -20% from normal speed
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT0
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+          mask_null: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          mask_null: ""
+        leftLeg:
+          mask_null: ""
+        rightLeg:
+          mask_null: ""
+        decor:
+          leg_treads: ""
+        overlay:
+          overlay_openbrain: ""
+          overlay_openmodule: ""
+          overlay_openwires: ""
+          mask_null: ""
+        overlayUnshaded:
+          overlay_critdmg: ""
 
-        if (component.ReclaimMaterials)
-            SpawnMaterialsFromComposition(uid, item, completion * component.Efficiency, xform: xform);
+- type: entity
+  parent:
+  - MobRogueSiliconScrapBase
+  - MobRogueSiliconAISimpleMelee
+  id: MobRogueSiliconScrapThrustersAsteroid
+  # Triad: Fixed typo:
+  # name: malfunctionnig scrap unit
+  name: malfunctioning scrap unit
+  # End Triad
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: MovementSpeedModifier
+    baseWalkSpeed : 3.6 # -20% from normal speed
+    baseSprintSpeed : 3.6 # -20% from normal speed
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT0
+  - type: RandomSprite
+    available:
+      - body:
+          body_generic: ""
+          body_light: ""
+        head:
+          head_generic: ""
+          head_heavy: ""
+          head_light: ""
+          head_sturdy: ""
+        eyes:
+          head_generic_eye: Emagged
+          head_heavy_eye: Emagged
+          head_light_eye: Emagged
+          head_sturdy_eye: Emagged
+        leftArm:
+          l_arm_generic: ""
+          l_arm_heavy: ""
+          l_arm_light: ""
+          l_arm_sturdy: ""
+          mask_null: ""
+        rightArm:
+          r_arm_generic: ""
+          r_arm_heavy: ""
+          r_arm_light: ""
+          r_arm_sturdy: ""
+          mask_null: ""
+        leftLeg:
+          mask_null: ""
+        rightLeg:
+          mask_null: ""
+        decor:
+          leg_thruster: ""
+        overlay:
+          overlay_openbrain: ""
+          overlay_openmodule: ""
+          overlay_openwires: ""
+          mask_null: ""
+        overlayUnshaded:
+          overlay_critdmg: ""
+  - type: PointLight
+    radius: 2.5
+    color: orange
+    energy: 0.5
+  - type: CanMoveInAir
+  - type: Fixtures
+    fixtures:
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.30 # Lowered the value, to allow them to fit through the airlocks
+        density: 100
+        mask:
+          - FlyingMobMask
+        layer:
+          - FlyingMobLayer
+  - type: FootstepModifier
+    footstepSoundCollection:
+      path: /Audio/_NF/Effects/silence.ogg
+  - type: SoundWhileAlive
+  - type: AmbientSound
+    volume: -9
+    range: 5
+    sound: /Audio/Effects/shuttle_thruster.ogg
 
-        if (CanGib(uid, item, component))
-        {
-            var logImpact = HasComp<HumanoidAppearanceComponent>(item) ? LogImpact.Extreme : LogImpact.Medium;
-            _adminLogger.Add(LogType.Gib, logImpact, $"{ToPrettyString(item):victim} was gibbed by {ToPrettyString(uid):entity} ");
-            if (component.ReclaimSolutions)
-                SpawnChemicalsFromComposition(uid, item, completion, false, component, xform);
-            _body.GibBody(item, true);
-            _appearance.SetData(uid, RecyclerVisuals.Bloody, true);
-        }
-        else
-        {
-            if (component.ReclaimSolutions)
-                SpawnChemicalsFromComposition(uid, item, completion, true, component, xform);
-        }
-
-        QueueDel(item);
-    }
-
-    private void SpawnMaterialsFromComposition(EntityUid reclaimer,
-        EntityUid item,
-        float efficiency,
-        MaterialStorageComponent? storage = null,
-        TransformComponent? xform = null,
-        PhysicalCompositionComponent? composition = null)
-    {
-        if (!Resolve(reclaimer, ref storage, ref xform, false))
-            return;
-
-        if (!Resolve(item, ref composition, false))
-            return;
-
-        // If more of these checks are needed, use an event instead
-        var modifier = CompOrNull<StackComponent>(item)?.Count ?? 1.0f;
-
-        foreach (var (material, amount) in composition.MaterialComposition)
-        {
-            var outputAmount = (int) (amount * efficiency * modifier);
-            _materialStorage.TryChangeMaterialAmount(reclaimer, material, outputAmount, storage);
-        }
-
-        foreach (var (storedMaterial, storedAmount) in storage.Storage)
-        {
-            var stacks = _materialStorage.SpawnMultipleFromMaterial(storedAmount,
-                storedMaterial,
-                xform.Coordinates,
-                out var materialOverflow);
-            var amountConsumed = storedAmount - materialOverflow;
-            _materialStorage.TryChangeMaterialAmount(reclaimer, storedMaterial, -amountConsumed, storage);
-            foreach (var stack in stacks)
-            {
-                _stack.TryMergeToContacts(stack);
-            }
-        }
-    }
-
-    private void SpawnChemicalsFromComposition(EntityUid reclaimer,
-        EntityUid item,
-        float efficiency,
-        bool sound = true,
-        MaterialReclaimerComponent? reclaimerComponent = null,
-        TransformComponent? xform = null,
-        PhysicalCompositionComponent? composition = null)
-    {
-        if (!Resolve(reclaimer, ref reclaimerComponent, ref xform))
-            return;
-
-        efficiency *= reclaimerComponent.Efficiency;
-
-        var totalChemicals = new Solution();
-
-        if (Resolve(item, ref composition, false))
-        {
-            foreach (var (key, value) in composition.ChemicalComposition)
-            {
-                // TODO use ReagentQuantity
-                totalChemicals.AddReagent(key, value * efficiency, false);
-            }
-        }
-
-        // if the item we inserted has reagents, add it in.
-
-        // Frontier: use old material reclaimer code
-        if (reclaimerComponent.UseOldSolutionLogic &&
-            TryComp<SolutionContainerManagerComponent>(item, out var solutionContainer))
-        {
-            foreach (var (_, soln) in _solutionContainer.EnumerateSolutions((item, solutionContainer)))
-            {
-                var solution = soln.Comp.Solution;
-                foreach (var quantity in solution.Contents)
-                {
-                    totalChemicals.AddReagent(quantity.Reagent.Prototype, quantity.Quantity * efficiency, false);
-                }
-            }
-        }
-        // End Frontier: use old material reclaimer code
-        else if (reclaimerComponent.OnlyReclaimDrainable) // Frontier: add else
-        {
-            // Are we a recycler? Only use drainable solution.
-            if (_solutionContainer.TryGetDrainableSolution(item, out _, out var drainableSolution))
-            {
-                totalChemicals.AddSolution(drainableSolution, _prototype);
-            }
-        }
-        else
-        {
-            // Are we an industrial reagent grinder? Use extractable solution.
-            if (_solutionContainer.TryGetExtractableSolution(item, out _, out var extractableSolution))
-            {
-                totalChemicals.AddSolution(extractableSolution, _prototype);
-            }
-        }
-
-        if (!_solutionContainer.TryGetSolution(reclaimer, reclaimerComponent.SolutionContainerId, out var outputSolution) ||
-            !_solutionContainer.TryTransferSolution(outputSolution.Value, totalChemicals, totalChemicals.Volume) ||
-            totalChemicals.Volume > 0)
-        {
-            _puddle.TrySpillAt(reclaimer, totalChemicals, out _, sound, transformComponent: xform);
-        }
-    }
-}
+- type: entity
+  parent:
+  - MobRogueSiliconScrapThrustersAsteroid
+  id: MobRogueSiliconScrapThrustersRangedAsteroid
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: MovementSpeedModifier
+    baseWalkSpeed : 2.6
+    baseSprintSpeed : 2.6
+  - type: Loadout
+    prototypes:
+    - MobRogueSiliconLootT1
+  - type: HitscanBatteryAmmoProvider
+    proto: RedLaser
+    fireCost: 100
+  - type: Gun
+    showExamineText: false
+    fireRate: 0.7
+    minAngle: 5
+    maxAngle: 10
+    selectedMode: FullAuto
+    availableModes:
+    - FullAuto
+    soundGunshot:
+      path: /Audio/Weapons/Guns/Gunshots/laser.ogg
+      params:
+        variation: 0.2
